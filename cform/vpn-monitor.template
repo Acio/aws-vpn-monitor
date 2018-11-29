@@ -101,12 +101,25 @@
                         "Arn"
                     ]
                 },
+                "Environment": {
+                    "Variables" : { 
+                        "UUID": {
+                            "Fn::GetAtt": [
+                                "CreateUniqueID",
+                                "UUID"
+                            ]
+                        },
+                        "AnonymousData": {
+                            "Ref": "SendAnonymousData"
+                        }
+                    }
+                },
                 "Code": {
                     "S3Bucket": {
                         "Fn::Join": [
                             "",
                             [
-                                "solutions-builder-",
+                                "solutions-",
                                 {
                                     "Ref": "AWS::Region"
                                 }

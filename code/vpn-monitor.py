@@ -17,6 +17,7 @@ import logging
 import datetime
 from urllib2 import Request
 from urllib2 import urlopen
+import os
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -26,9 +27,9 @@ cw = boto3.client('cloudwatch')
 
 
 # Save the connection status in the CloudWatch Custom Metric
-def putCloudWatchMetric(metricName, value, vgw, cgw, region):
+def putCloudWatchMetric(metricName, value, vgw, cgw, region, namespace):
     cw.put_metric_data(
-        Namespace='VPNStatus',
+        Namespace=namespace,
         MetricData=[{
             'MetricName': metricName,
             'Value': value,
@@ -64,14 +65,10 @@ def lambda_handler(event, context):
     outputs = {}
     TimeNow = datetime.datetime.utcnow().isoformat()
     TimeStamp = str(TimeNow)
+    status = 0
 
-    # Read output variables from CloudFormation Template
-    stack_name = context.invoked_function_arn.split(':')[6].rsplit('-', 2)[0]
-    response = cf.describe_stacks(StackName=stack_name)
-    for e in response['Stacks'][0]['Outputs']:
-        outputs[e['OutputKey']] = e['OutputValue']
-    uuid = outputs['UUID']
-    sendData = outputs['AnonymousData']
+    uuid = os.environ['UUID']
+    sendData = os.environ['AnonymousData']
 
     # Check VPN connections status in all the regions
     for region in AWS_Regions:
@@ -90,7 +87,14 @@ def lambda_handler(event, context):
                     if vpn['VgwTelemetry'][1]['Status'] == "UP":
                         active_tunnels += 1
                     log.info('{} VPN ID: {}, State: {}, Tunnel0: {}, Tunnel1: {} -- {} active tunnels'.format(region['RegionName'], vpn['VpnConnectionId'],vpn['State'],vpn['VgwTelemetry'][0]['Status'],vpn['VgwTelemetry'][1]['Status'], active_tunnels))
-                    putCloudWatchMetric(vpn['VpnConnectionId'], active_tunnels, vpn['VpnGatewayId'], vpn['CustomerGatewayId'], region['RegionName'])
+                    putCloudWatchMetric(vpn['VpnConnectionId'], active_tunnels, vpn['VpnGatewayId'], vpn['CustomerGatewayId'], region['RegionName'], 'VPNStatus')
+                    if active_tunnels == 1:
+                        status = 1
+                    elif active_tunnels == 0:
+                        status = -1
+                    elif active_tunnels == 2:
+                        status = 0
+                    putCloudWatchMetric(vpn['VpnConnectionId'], status, vpn['VpnGatewayId'], vpn['CustomerGatewayId'], region['RegionName'], 'VPNTunnelStatus')
             # Build anonymous data
             if sendData == "Yes":
                 countDict['vpn_connections'] = connections
